@@ -1,0 +1,53 @@
+version: '3'
+services:
+  suricata:
+    image: registry.gitlab.aeros-project.eu/wp3/t3.5/self-security/self-security:latest
+    container_name: suricata
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_NICE
+    volumes:
+      - ./k8s-infra/suricata.yaml:/etc/suricata/suricata.yaml
+      - ./k8s-infra/suricata.rules:/var/lib/suricata/rules/suricata.rules
+      - default-log-dir:/var/log/suricata
+    command: -i eth0
+    restart: always
+
+  python-etl:
+    image: registry.gitlab.aeros-project.eu/wp3/t3.5/self-security/etl:latest
+    container_name: python-etl
+    environment:
+      - ENDPOINT_URL=http://ENDPOINT_URL
+      - MY_NODE_NAME=docker_node
+      - Password_Admin=Admin Password
+      - Userpassword=User PassWord@
+    volumes:
+      - default-log-dir:/var/log/suricata
+    depends_on:
+      - suricata
+
+  suricata-api: 
+    image: registry.gitlab.aeros-project.eu/wp3/t3.5/self-security/api:latest
+    container_name: suricata-api
+    environment:
+      - MY_NODE_NAME=docker_node
+    # flask requires SIGINT to stop gracefully
+    # (default stop signal from Compose is SIGTERM)
+    stop_signal: SIGINT
+    ports:
+      - '8000:8000'
+    volumes:
+      - default-log-dir:/var/log/suricata
+    depends_on:
+      - suricata      
+
+volumes:
+  default-log-dir:
+
+configs:
+  suricata-config:
+    file: ./k8s-infra/suricata.yaml
+  suricata-rules:
+    file: ./k8s-infra/suricata.rules

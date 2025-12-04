@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: self-security
+  labels:
+    app: suricata
+  
+spec:
+  selector:
+    matchLabels:
+      app: suricata
+  template:
+    metadata:
+      labels:
+        app: suricata
+      name: suricata
+    spec:
+      hostIPC: true
+      hostPID: true
+      hostNetwork: true
+      containers:
+        - name: suricata
+          image: registry.gitlab.aeros-project.eu/aeros-public/common-deployments/self-security/self-security 
+          command:
+            - /usr/bin/suricata
+            - -i
+            - eth0
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - mountPath: /host/dev
+              name: dev
+            - mountPath: /var/run/docker.sock
+              name: docker-socket-mount
+            - name: suricata-log-pv
+              mountPath: "/var/log/suricata"
+            - mountPath: /etc/suricata/suricata.yaml
+              name: suricata-config
+              subPath: suricata.yaml
+            - mountPath: /var/lib/suricata/rules/suricata.rules
+              name: suricata-rules
+              subPath: suricata.rules
+        - name: python-etl
+          image: registry.gitlab.aeros-project.eu/aeros-public/common-deployments/self-security/etl
+          env:
+            - name: ENDPOINT_URL
+              value: "http://ENDPOINT_URL"
+            - name: MY_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: Password_Admin
+              value: "Admin Password"
+            - name: Userpassword
+              value: "User PassWord@"
+          volumeMounts:
+            - name: suricata-log-pv
+              mountPath: "/var/log/suricata"
+
+        - name: suricata-api
+          securityContext: {}
+          image: registry.gitlab.aeros-project.eu/aeros-public/common-deployments/self-security/api
+#          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              hostPort: 8000
+              protocol: TCP
+          resources: {}
+          env:
+            - name: MY_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: suricata-log-pv
+              mountPath: "/var/log/suricata"
+
+      imagePullSecrets:
+        - name: aeros-common-deployments
+      volumes:
+        - name: dev
+          hostPath:
+            path: /dev
+        - name: docker-socket-mount
+          hostPath:
+            path: /var/run/docker.sock
+        - name: suricata-config
+          configMap:
+            name: suricata-config
+        - name: suricata-rules
+          configMap:
+            name: suricata-rules
+        - name: suricata-log-pv
+          hostPath:
+            path: /var/log/suricata
+#        - name: suricata-log-pv
+#          persistentVolumeClaim:
+#            claimName: suricata-log-pv-claim

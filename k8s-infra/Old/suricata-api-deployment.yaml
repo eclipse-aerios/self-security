@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: suricata-api-deployment
+  labels:
+    app: suricata-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels: 
+      app: suricata-api
+  template:
+    metadata:
+      labels:
+        app: suricata-api
+    spec:
+
+      imagePullSecrets:
+        - name: gitlab-registry-credentials-self-security-s21-2
+      nodeSelector: {}
+      affinity: {}
+      tolerations: []
+      securityContext: {}
+      containers:
+        - name: suricata-api
+          securityContext: {}
+          image: registry.gitlab.aeros-project.eu/wp3/t3.5/self-security/api:latest
+#          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          resources: {}
+          env:
+            - name: MY_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: suricata-log-pv
+              mountPath: "/var/log/suricata"
+              
+      volumes:
+        - name: suricata-log-pv
+          persistentVolumeClaim:
+            claimName: suricata-log-pv-claim
+
+#          hostPath:
+#            path: /var/log/suricata              

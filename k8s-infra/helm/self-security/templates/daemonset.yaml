@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: "{{ .Release.Name }}"
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ .Chart.Name }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Chart.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Chart.Name }}
+      name: suricata
+    spec:
+      hostIPC: true
+      hostPID: true
+      hostNetwork: true
+      initContainers:
+        - name: init-obtain-interface
+          image: {{ .Values.initContainer.image }}
+          command:
+            - /bin/sh
+            - "-c"
+            - >
+              INTERFACE=$(ip -o -4 route show to default | awk '{print $5}');
+              MAC_ADDRESS=$(cat /sys/class/net/$INTERFACE/address);
+              echo "$INTERFACE" > /mnt/shared/interface.txt;
+              echo "$MAC_ADDRESS" > /mnt/shared/mac_address.txt;
+              echo "$INTERFACE";
+              echo "$MAC_ADDRESS"
+          volumeMounts:
+            - name: shared-data
+              mountPath: /mnt/shared
+      containers:
+        - name: log-cleaner
+          image: {{ .Values.logcleaner.image }}
+          command:
+            - /bin/sh
+            - "-c"
+            - |
+              while true; do
+                echo "Cleaning suricata logs in $(hostname)..."
+                echo "" > /var/log/suricata/fast.log
+                sleep 604800  # wait one week(604800 seconds)
+              done
+          volumeMounts:
+            - name: suricata-log-pv
+              mountPath: /var/log/suricata
+          securityContext:
+            privileged: true
+        - name: suricata
+          image: {{ .Values.suricata.image }}
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: shared-data
+              mountPath: /mnt/shared
+            - mountPath: /host/dev
+              name: dev
+            - mountPath: /var/run/docker.sock
+              name: docker-socket-mount
+            - name: suricata-log-pv
+              mountPath: "/var/log/suricata"
+            - mountPath: /etc/suricata/suricata.yaml
+              name: suricata-config
+              subPath: suricata.yaml
+            - mountPath: /var/lib/suricata/rules/suricata.rules
+              name: suricata-rules
+              subPath: suricata.rules
+          command:
+            - /bin/sh
+            - "-c"
+            - |
+              INTERFACE=$(cat /mnt/shared/interface.txt)
+              echo "Using interface $INTERFACE for Suricata"
+              suricata -i "$INTERFACE" -c /etc/suricata/suricata.yaml --af-packet
+        - name: python-etl
+          image: {{ .Values.etl.image }}
+          env:
+            - name: ENDPOINT_URL
+              value: {{ .Values.etl.endpointURL }}
+            - name: MY_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: Password_Admin
+              value: {{ .Values.etl.adminPassword }}
+            - name: Userpassword
+              value: {{ .Values.etl.userPassword }}
+          volumeMounts:
+            - name: suricata-log-pv
+              mountPath: "/var/log/suricata"
+            - name: shared-data
+              mountPath: /mnt/shared
+        - name: suricata-api
+          image: {{ .Values.api.image }}
+          imagePullPolicy: {{ .Values.api.imagePullPolicy }}
+          ports:
+            - containerPort: 8000
+              hostPort: 8000
+              protocol: TCP
+          env:
+            - name: MY_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: suricata-log-pv
+              mountPath: "/var/log/suricata"
+            - name: shared-data
+              mountPath: /mnt/shared         
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecrets }}
+      volumes:
+        - name: dev
+          hostPath:
+            path: /dev
+        - name: docker-socket-mount
+          hostPath:
+            path: /var/run/docker.sock
+        - name: suricata-config
+          configMap:
+            name: "suricata-config"
+        - name: suricata-rules
+          configMap:
+            name: "suricata-rules"
+        - name: suricata-log-pv
+          hostPath:
+            path: /var/log/suricata
+        - name: shared-data
+          emptyDir: {}

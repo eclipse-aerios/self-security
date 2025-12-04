@@ -1,0 +1,50 @@
+initContainer:
+  image: busybox
+
+logcleaner:
+  image: busybox
+
+suricata:
+  image: registry.gitlab.aeros-project.eu/aeros-public/common-deployments/self-security/self-security
+
+etl:
+  image: registry.gitlab.aeros-project.eu/aeros-public/common-deployments/self-security/etl
+  endpointURL: "http://10.254.102.73:3000/notification" 
+  adminPassword: "Admin Password"
+  userPassword: "User PassWord@"
+
+api:
+  image: registry.gitlab.aeros-project.eu/aeros-public/common-deployments/self-security/api
+  imagePullPolicy: Always
+
+imagePullSecrets: aeros-common-deployments
+
+configMaps:
+  suricataConfig: suricata-config
+  suricataRules: suricata-rules
+
+suricataRules: |
+  # alert icmp any any -> any any (msg:"ICMP Echo Request (Ping)"; itype:8; sid:1000001; rev:1;)
+  # alert icmp any any -> any any (msg:"ICMP Echo Reply (Ping Reply)"; itype:0; sid:1000002; rev:1;)
+  # alert icmp any any -> $HOME_NET any (msg:"ICMP Echo Request (Ping)"; itype:8; sid:1000001; rev:1;)
+  # alert icmp $HOME_NET any -> any any (msg:"ICMP Echo Reply (Ping Reply)"; itype:0; sid:1000002; rev:1;)
+
+  # alert tcp any any -> $HOME_NET any (flags:S; threshold:type limit, track by_src, count 5, seconds 10; msg:"Possible Nmap SYN Scan"; sid:1000001;)
+  alert tcp any any -> $HOME_NET any (flags:F; threshold:type limit, track by_src, count 5, seconds 10; msg:"Possible Nmap FIN Scan"; sid:1000002;)
+  alert tcp any any -> $HOME_NET any (flags:0; threshold:type limit, track by_src, count 5, seconds 10; msg:"Possible Nmap NULL Scan"; sid:1000003;)
+  alert tcp any any -> $HOME_NET any (flags:FP; threshold:type limit, track by_src, count 5, seconds 10; msg:"Possible Nmap Xmas Scan"; sid:1000004;)
+  alert tcp any any -> $HOME_NET any (content:"|00 00 00 00|"; depth:4; msg:"Possible Nmap Service Version Scan"; sid:1000005;)
+  # alert icmp any any -> $HOME_NET any (itype:8; icmp_id:0xdead; msg:"Possible Nmap OS Fingerprinting"; sid:1000006;)
+  alert tcp any any -> $HOME_NET any (content:"nmap"; nocase; msg:"Possible Nmap Script Scan"; detection_filter: track by_src, count 50, seconds 2; sid:1000007;)
+  # alert icmp any any -> $HOME_NET any (itype:8; msg:"ICMP Traffic Detected (PING)"; sid:1000008;)
+  alert tcp $EXTERNAL_NET any -> $HOME_NET any (msg:"LOCAL DOS SYN packet flood inbound, Potential DOS"; flow:to_server; flags: S,12; threshold: type both, track by_dst, count 10, seconds 5; classtype:misc-activity; sid:5;)
+  alert tcp $HOME_NET any -> $EXTERNAL_NET any (msg:"LOCAL DOS SYN packet flood outbound, Potential DOS"; flow:to_server; flags: S,12; threshold: type both, track by_dst, count 10, seconds 5; classtype:misc-activity; sid:6;)
+  alert http any any -> $HOME_NET any (msg:"Keycloak Brute Force Detected"; flow:to_server,established; content:"POST"; http_method; content:"/protocol/openid-connect/token"; http_uri; threshold:type both, track by_src, count 10, seconds 60; classtype:attempted-recon; sid:1000012; rev:1;)
+  # alert http any any -> $HOME_NET any (msg:"Keycloak Brute Force Detected"; flow:to_server,established; content:"POST"; http_method; content:"/protocol/openid-connect/token"; http_uri; http.response_code; content:"401"; threshold:type both, track by_src, count 10, seconds 60; classtype:attempted-recon; sid:1000013; rev:1;)
+  alert icmp $EXTERNAL_NET any -> $HOME_NET any (msg:"ICMP DoS Attack - Ping Flood"; detection_filter: track by_src, count 10, seconds 10; sid:100004;)
+  alert tcp $EXTERNAL_NET any -> $HOME_NET any (msg:"TCP SYN Flood Attack"; flags:S; detection_filter: track by_src, count 10, seconds 1; sid:100005;)
+  # alert http any any -> $HOME_NET any (msg:"SQL Injection attempt"; content:"' OR '1'='1"; nocase; classtype:web-application-attack; sid:1000112; rev:1;)
+  alert tcp $EXTERNAL_NET any -> $HOME_NET any (msg:"TCP Connection Hijacking Attempt"; flags:PA; flow:to_server,established; threshold:type both, track by_src, count 10, seconds 30; sid:100008;)
+
+
+

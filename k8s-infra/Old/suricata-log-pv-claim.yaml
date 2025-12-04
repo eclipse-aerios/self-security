@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: suricata-log-pv-claim
+spec:
+#  storageClassName: cinder-ssd
+  storageClassName: suricata-custom
+  accessModes:
+    - ReadWriteMany
+#    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
